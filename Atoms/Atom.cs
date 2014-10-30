@@ -15,19 +15,38 @@ namespace Pavel.Atoms
 
         protected abstract void Evaluate(out T value, out Exception exception);
 
+        protected sealed override bool Update()
+        {
+            var oldValue = value;
+            var oldException = exception;
+            Evaluate(out value, out exception);
+            return (oldException == null) != (exception == null)
+                || exception == null && CompareValues(oldValue, value)
+                || exception != null && CompareExceptions(oldException, exception);
+        }
+
+        protected virtual bool CompareValues(T oldValue, T newValue)
+        {
+            return object.Equals(oldValue, newValue);
+        }
+
+        protected virtual bool CompareExceptions(Exception oldException, Exception newException)
+        {
+            return object.Equals(oldException.GetType(), newException.GetType())
+                && object.Equals(oldException.Message, newException.Message)
+                && object.Equals(oldException.StackTrace, newException.StackTrace);
+        }
+
         public sealed override object GetResult() { return Value; }
         public T Value
         {
             get
             {
                 using (var e = StartEvaluation())
-                {
-                    if (e.IsDirty) Evaluate(out value, out exception);
-
                     if (exception != null)
                         throw new AggregateException(exception);
-                    return value;
-                }
+                    else
+                        return value;
             }
         }
 
@@ -36,10 +55,7 @@ namespace Pavel.Atoms
             get
             {
                 using (var e = StartEvaluation())
-                {
-                    if (e.IsDirty) Evaluate(out value, out exception);
                     return exception;
-                }
             }
         }
 
@@ -47,7 +63,6 @@ namespace Pavel.Atoms
         {
             using (var e = StartEvaluation())
             {
-                if (e.IsDirty) Evaluate(out value, out exception);
                 value = this.value;
                 return exception == null;
             }
@@ -57,7 +72,6 @@ namespace Pavel.Atoms
         {
             using (var e = StartEvaluation())
             {
-                if (e.IsDirty) Evaluate(out value, out exception);
                 value = this.value;
                 exception = this.exception;
             }

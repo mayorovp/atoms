@@ -12,32 +12,36 @@ namespace Pavel.Atoms
         private static readonly ReaderWriterLockSlim rwlock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
         private static readonly ThreadLocal<AtomBase> currentEvaluation = new ThreadLocal<AtomBase>();
         private readonly List<WeakReference<AtomBase>> parents = new List<WeakReference<AtomBase>>();
+        private List<WeakReference<AtomBase>> childs = new List<WeakReference<AtomBase>>();
         private readonly WeakReference<AtomBase> self;
 
         public AtomBase() { self = new WeakReference<AtomBase>(this); }
 
-        private object state = DIRTY; // state in [ READY, DIRTY, ManualResetEventSlim ]
         private static readonly string DIRTY = "DIRTY";
+        private static readonly string CHANGED = "CHANGED";
         private static readonly string READY = "READY";
+        private object state = DIRTY; // state in [ READY, DIRTY, CHANGED, ManualResetEventSlim ]
+        private long generation;
 
         // NotifyDirty выполняется во время фазы распространения загрязнения.
         // Эта фаза работает в однопоточном режиме.
-        private void NotifyDirty()
+        private void NotifyDirty(object newState)
         {
             if (state == READY)
             {
-                state = DIRTY;
+                state = newState;
                 foreach (var parentRef in parents)
                 {
                     AtomBase parent;
                     if (parentRef.TryGetTarget(out parent))
-                        parent.NotifyDirty();
+                        parent.NotifyDirty(DIRTY);
                 }
                 parents.Clear();
             }
         }
 
         private static readonly ConcurrentQueue<AtomBase> dirtyQueue = new ConcurrentQueue<AtomBase>();
+        private static long currentGeneration;
         protected void Notify()
         {
             if (!rwlock.TryEnterWriteLock(0))
@@ -45,8 +49,10 @@ namespace Pavel.Atoms
 
             try
             {
+                currentGeneration++;
+
                 AtomBase next = this;
-                do { next.NotifyDirty(); }
+                do { next.NotifyDirty(CHANGED); }
                 while (dirtyQueue.TryDequeue(out next));
             }
             finally
@@ -55,10 +61,13 @@ namespace Pavel.Atoms
             }
         }
 
+        protected abstract bool Update();
+
         protected Evaluation StartEvaluation()
         {
             var handler = EvaluationHandler();
-            return new Evaluation((IDisposable)handler, handler.MoveNext() && handler.Current);
+            handler.MoveNext();
+            return new Evaluation(handler);
         }
 
         // EvaluationHandler выполняется во время фазы рассчетов
@@ -72,11 +81,14 @@ namespace Pavel.Atoms
             try
             {
                 lock (parents) parents.Add(parentEvaluation.self);
+                parentEvaluation.childs.Add(self);
 
                 if (state == READY) yield return false;
                 using (var _event = new ManualResetEventSlim())
                 {
-                    var oldState = Interlocked.CompareExchange(ref state, _event, DIRTY);
+                    var oldState = state == DIRTY
+                        ? Interlocked.CompareExchange(ref state, _event, DIRTY)
+                        : Interlocked.CompareExchange(ref state, _event, CHANGED);
                     if (oldState == READY) yield return false;
                     if (oldState is ManualResetEventSlim)
                     {
@@ -86,7 +98,33 @@ namespace Pavel.Atoms
 
                     try
                     {
-                        yield return true;
+                        bool changed;
+                        if (oldState == CHANGED)
+                            changed = true;
+                        else
+                        {
+                            changed = false;
+                            var oldChilds = childs;
+                            childs = new List<WeakReference<AtomBase>>(); // Строка (1) ниже заного заполнит этот список в качестве побочного эффекта
+
+                            foreach (var childRef in childs)
+                            {
+                                AtomBase child;
+                                if (childRef.TryGetTarget(out child))
+                                {
+                                    // Чтобы определить факт изменения дочерней записи, надо сначала вычислить ее
+                                    child.StartEvaluation().Dispose(); // (1)
+                                    if (child.generation > generation)
+                                        changed = true;
+                                }
+                            }
+                        }
+                        if (changed)
+                        {
+                            childs.Clear(); // Строка ниже заного заполнит список
+                            if (Update())
+                                generation = currentGeneration;
+                        }
                     }
                     finally
                     {
@@ -94,9 +132,14 @@ namespace Pavel.Atoms
                         _event.Set();
                     }
                 }
+
+                // Во время выполнения yield удерживается блокировка rwlock - это дает вызывающему коду возможность безопасно прочитать свое состояние
+                // Поэтому все ветви кода должны заканчиваться оператором yield
+                yield return true;
             }
             finally
             {
+                if (currentEvaluation.Value != this) throw new InvalidOperationException("Переключение потока во время выполнения EvaluationHandler");
                 currentEvaluation.Value = parentEvaluation;
                 if (parentEvaluation == null) rwlock.ExitReadLock();
             }
@@ -104,16 +147,9 @@ namespace Pavel.Atoms
 
         protected struct Evaluation : IDisposable
         {
-            private readonly IDisposable handler;
-            private readonly bool dirty;
-            internal Evaluation(IDisposable handler, bool dirty)
-            {
-                this.handler = handler;
-                this.dirty = dirty;
-            }
-
-            public bool IsDirty { get { return dirty; } }
-            public void Dispose() { handler.Dispose(); }
+            private readonly IEnumerator<bool> handler;
+            internal Evaluation(IEnumerator<bool> handler) { this.handler = handler; }
+            public void Dispose() { ((IDisposable)handler).Dispose(); }
         }
     }
 }
