@@ -37,6 +37,8 @@ namespace Pavel.Atoms
                         parent.NotifyDirty(DIRTY);
                 }
                 parents.Clear();
+
+                NotifyEvents();
             }
         }
 
@@ -60,6 +62,8 @@ namespace Pavel.Atoms
                 rwlock.ExitWriteLock();
             }
         }
+
+        protected virtual void NotifyEvents() { }
 
         protected abstract bool Update();
 
