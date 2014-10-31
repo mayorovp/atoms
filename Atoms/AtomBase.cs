@@ -67,16 +67,16 @@ namespace Pavel.Atoms
 
         protected abstract bool Update();
 
-        protected Evaluation StartEvaluation()
+        protected Evaluation StartEvaluation(bool registerAsChild = true)
         {
-            var handler = EvaluationHandler();
+            var handler = EvaluationHandler(registerAsChild);
             handler.MoveNext();
             return new Evaluation(handler);
         }
 
         // EvaluationHandler выполняется во время фазы рассчетов
         // Эта фаза работает в многопоточном режиме
-        private IEnumerator<bool> EvaluationHandler()
+        private IEnumerator<bool> EvaluationHandler(bool registerAsChild)
         {
             var parentEvaluation = currentEvaluation.Value;
             if (parentEvaluation == null) rwlock.EnterReadLock();
@@ -85,7 +85,7 @@ namespace Pavel.Atoms
             try
             {
                 lock (parents) parents.Add(parentEvaluation.self);
-                parentEvaluation.childs.Add(self);
+                if (registerAsChild) parentEvaluation.childs.Add(self);
 
                 if (state == READY) yield return false;
                 using (var _guard = new StateGuard())
@@ -94,13 +94,12 @@ namespace Pavel.Atoms
                         ? Interlocked.CompareExchange(ref state, _guard, DIRTY)
                         : Interlocked.CompareExchange(ref state, _guard, CHANGED);
                     if (oldState == READY) yield return false;
-                    if (oldState is StateGuard)
+                    else if (oldState is StateGuard)
                     {
                         ((StateGuard)oldState).Wait();
                         yield return false;
                     }
-
-                    try
+                    else
                     {
                         bool changed;
                         if (oldState == CHANGED)
@@ -108,16 +107,13 @@ namespace Pavel.Atoms
                         else
                         {
                             changed = false;
-                            var oldChilds = childs;
-                            childs = new List<WeakReference<AtomBase>>(); // Строка (1) ниже заного заполнит этот список в качестве побочного эффекта
-
                             foreach (var childRef in childs)
                             {
                                 AtomBase child;
                                 if (childRef.TryGetTarget(out child))
                                 {
                                     // Чтобы определить факт изменения дочерней записи, надо сначала вычислить ее
-                                    child.StartEvaluation().Dispose(); // (1)
+                                    child.StartEvaluation(false).Dispose();
                                     if (child.generation > generation)
                                         changed = true;
                                 }
@@ -130,10 +126,8 @@ namespace Pavel.Atoms
                                 generation = currentGeneration;
                         }
                     }
-                    finally
-                    {
-                        state = READY;
-                    }
+
+                    state = READY;
                 }
 
                 // Во время выполнения yield удерживается блокировка rwlock - это дает вызывающему коду возможность безопасно прочитать свое состояние
