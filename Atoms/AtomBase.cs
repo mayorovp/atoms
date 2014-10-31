@@ -38,7 +38,9 @@ namespace Pavel.Atoms
                 }
                 parents.Clear();
 
-                NotifyEvents();
+                lock (changed)
+                    foreach (var registration in changed)
+                        (registration.ctx ?? new SynchronizationContext()).Post(OnChanged, registration);
             }
         }
 
@@ -63,7 +65,25 @@ namespace Pavel.Atoms
             }
         }
 
-        protected virtual void NotifyEvents() { }
+        private readonly List<ChangedEventRegistration> changed = new List<ChangedEventRegistration>();
+        public event Action Changed
+        {
+            add { lock (changed) changed.Add(new ChangedEventRegistration(SynchronizationContext.Current, value)); }
+            remove { lock (changed) changed.Remove(new ChangedEventRegistration(null, value)); }
+        }
+        private void OnChanged(object obj)
+        {
+            if (state != READY) StartEvaluation().Dispose();
+
+            var reg = (ChangedEventRegistration)obj;
+            var g = generation;
+            if (g > reg.generation)
+            {
+                reg.generation = g;
+                if (reg.action != null)
+                    reg.action();
+            }
+        }
 
         protected abstract bool Update();
 
@@ -147,6 +167,25 @@ namespace Pavel.Atoms
             private readonly IEnumerator<bool> handler;
             internal Evaluation(IEnumerator<bool> handler) { this.handler = handler; }
             public void Dispose() { ((IDisposable)handler).Dispose(); }
+        }
+
+        private class ChangedEventRegistration
+        {
+            public readonly SynchronizationContext ctx;
+            public readonly Action action;
+            public long generation;
+
+            public ChangedEventRegistration(SynchronizationContext ctx, Action action)
+            {
+                this.ctx = ctx;
+                this.action = action;
+                this.generation = currentGeneration;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is ChangedEventRegistration && object.Equals(action, ((ChangedEventRegistration)obj).action);
+            }
         }
     }
 }

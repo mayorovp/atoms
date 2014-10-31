@@ -8,21 +8,6 @@ namespace Pavel.Atoms
     {
         public abstract object GetResult();
         public abstract Exception Exception { get; }
-
-        private readonly List<Tuple<SynchronizationContext, Action>> changed = new List<Tuple<SynchronizationContext, Action>>();
-
-        public event Action Changed
-        {
-            add { lock (changed) changed.Add(new Tuple<SynchronizationContext, Action>(SynchronizationContext.Current, value)); }
-            remove { lock (changed) changed.Remove(new Tuple<SynchronizationContext, Action>(SynchronizationContext.Current, value)); }
-        }
-
-        protected override void NotifyEvents()
-        {
-            lock (changed)
-                foreach (var handler in changed)
-                    (handler.Item1 ?? new SynchronizationContext()).Post(_ => handler.Item2(), null);
-        }
     }
 
     public abstract class Atom<T> : Atom
