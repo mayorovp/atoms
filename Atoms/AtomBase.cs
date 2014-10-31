@@ -104,8 +104,11 @@ namespace Pavel.Atoms
 
             try
             {
-                lock (parents) parents.Add(parentEvaluation.self);
-                if (registerAsChild) parentEvaluation.childs.Add(self);
+                if (parentEvaluation != null)
+                {
+                    lock (parents) parents.Add(parentEvaluation.self);
+                    if (registerAsChild) parentEvaluation.childs.Add(self);
+                }
 
                 if (state == READY) yield return false;
                 using (var _guard = new StateGuard())
