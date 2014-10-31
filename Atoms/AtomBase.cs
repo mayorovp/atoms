@@ -31,7 +31,7 @@ namespace Pavel.Atoms
                 foreach (var parentRef in parents)
                 {
                     AtomBase parent;
-                    if (parentRef.TryGetTarget(out parent))
+                    if (parentRef.TryGetTarget(out parent) && parent != null)
                         parent.NotifyDirty(DIRTY);
                 }
                 parents.Clear();
@@ -131,7 +131,7 @@ namespace Pavel.Atoms
                             foreach (var childRef in childs)
                             {
                                 AtomBase child;
-                                if (childRef.TryGetTarget(out child))
+                                if (childRef.TryGetTarget(out child) && child != null)
                                 {
                                     // Чтобы определить факт изменения дочерней записи, надо сначала вычислить ее
                                     child.StartEvaluation(false).Dispose();
@@ -161,6 +161,12 @@ namespace Pavel.Atoms
                 currentEvaluation.Value = parentEvaluation;
                 if (parentEvaluation == null) rwlock.ExitReadLock();
             }
+        }
+
+        public void Close()
+        {
+            self.SetTarget(null);
+            lock (changed) changed.Clear();
         }
 
         protected struct Evaluation : IDisposable
