@@ -3,8 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 
-#pragma warning disable 252
-
 namespace Pavel.Atoms
 {
     public abstract class AtomBase
@@ -17,9 +15,9 @@ namespace Pavel.Atoms
 
         public AtomBase() { self = new WeakReference<AtomBase>(this); }
 
-        private static readonly string DIRTY = "DIRTY";
-        private static readonly string CHANGED = "CHANGED";
-        private static readonly string READY = "READY";
+        private static readonly object DIRTY = "DIRTY";
+        private static readonly object CHANGED = "CHANGED";
+        private static readonly object READY = "READY";
         private object state = DIRTY; // state in [ READY, DIRTY, CHANGED, StateGuard ]
         private long generation;
 
