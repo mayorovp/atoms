@@ -10,10 +10,12 @@ namespace Pavel.Atoms
         private static readonly object INITIAL = "INITIAL";
         private static readonly object WAITING = "WAITING";
         private static readonly object DONE = "DONE";
+        private readonly Thread ownerThread = Thread.CurrentThread;
         private volatile object state = INITIAL;
 
         public void Wait()
         {
+            if (Thread.CurrentThread == ownerThread) throw new CircularDependencyException();
             if (state == DONE || Interlocked.CompareExchange(ref state, WAITING, INITIAL) == DONE) return;
             lock (this)
             {

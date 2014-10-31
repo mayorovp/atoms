@@ -42,6 +42,7 @@
     <Compile Include="Atom.cs" />
     <Compile Include="AtomBase.cs" />
     <Compile Include="Atoms.cs" />
+    <Compile Include="CircularDependencyException.cs" />
     <Compile Include="DependentAtom.cs" />
     <Compile Include="FunctionalAtom.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
