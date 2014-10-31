@@ -20,7 +20,7 @@ namespace Pavel.Atoms
         private static readonly string DIRTY = "DIRTY";
         private static readonly string CHANGED = "CHANGED";
         private static readonly string READY = "READY";
-        private object state = DIRTY; // state in [ READY, DIRTY, CHANGED, ManualResetEventSlim ]
+        private object state = DIRTY; // state in [ READY, DIRTY, CHANGED, StateGuard ]
         private long generation;
 
         // NotifyDirty выполняется во время фазы распространения загрязнения.
@@ -88,15 +88,15 @@ namespace Pavel.Atoms
                 parentEvaluation.childs.Add(self);
 
                 if (state == READY) yield return false;
-                using (var _event = new ManualResetEventSlim())
+                using (var _guard = new StateGuard())
                 {
                     var oldState = state == DIRTY
-                        ? Interlocked.CompareExchange(ref state, _event, DIRTY)
-                        : Interlocked.CompareExchange(ref state, _event, CHANGED);
+                        ? Interlocked.CompareExchange(ref state, _guard, DIRTY)
+                        : Interlocked.CompareExchange(ref state, _guard, CHANGED);
                     if (oldState == READY) yield return false;
-                    if (oldState is ManualResetEventSlim)
+                    if (oldState is StateGuard)
                     {
-                        ((ManualResetEventSlim)oldState).Wait();
+                        ((StateGuard)oldState).Wait();
                         yield return false;
                     }
 
@@ -133,7 +133,6 @@ namespace Pavel.Atoms
                     finally
                     {
                         state = READY;
-                        _event.Set();
                     }
                 }
 
