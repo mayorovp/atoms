@@ -18,7 +18,7 @@ namespace Pavel.Atoms
         private static readonly object DIRTY = "DIRTY";
         private static readonly object CHANGED = "CHANGED";
         private static readonly object READY = "READY";
-        private object state = DIRTY; // state in [ READY, DIRTY, CHANGED, StateGuard ]
+        private object state = CHANGED; // state in [ READY, DIRTY, CHANGED, StateGuard ]
         private long generation;
 
         // NotifyDirty выполняется во время фазы распространения загрязнения.
