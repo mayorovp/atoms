@@ -36,9 +36,7 @@ namespace Pavel.Atoms
 
         protected virtual bool CompareExceptions(Exception oldException, Exception newException)
         {
-            return object.Equals(oldException.GetType(), newException.GetType())
-                && object.Equals(oldException.Message, newException.Message)
-                && object.Equals(oldException.StackTrace, newException.StackTrace);
+            return false;
         }
 
         public sealed override object GetResult() { return Value; }
