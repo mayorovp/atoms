@@ -51,7 +51,6 @@
   </Choose>
   <ItemGroup>
     <Compile Include="ComputedTests.cs" />
-    <Compile Include="ListTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

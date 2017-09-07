@@ -23,15 +23,26 @@ namespace Atoms
         {
             add
             {
-                if (_changed == null && value != null) IsWatched = true;
+                if (_changed == null && value != null) IsActive = true;
                  _changed += value;
             }
             remove
             {
                 _changed -= value;
-                if (_changed == null && value != null) IsWatched = false;
+                if (_changed == null && value != null) IsActive = false;
             }
         }
-        protected override void OnChanged() => _changed?.Invoke();
+
+        protected internal override bool DirtyCheck()
+        {
+            if (base.DirtyCheck())
+            {
+                _changed?.Invoke();
+                return true;
+            }
+            return false;
+        }
+
+        protected override void OnScheduledExecute() => DirtyCheck();
     }
 }

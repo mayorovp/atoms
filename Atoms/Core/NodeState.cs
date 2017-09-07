@@ -13,6 +13,6 @@ namespace Atoms.Core
         BecomeUnobservedRequired = 16,
         Computing = 32,
         Disposed = 64,
-        Watched = 128,
+        Active = 128,
     }
 }

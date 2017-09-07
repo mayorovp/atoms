@@ -12,12 +12,13 @@ namespace Atoms.Core
         {
             CheckQueueAccess();
 
-            var f = state & (NodeState.Dirty | NodeState.ProbablyDirty);
-            if (observers.Add(derivation) && f != NodeState.None)
+            if (observers.Add(derivation))
             {
-                derivation.ReportStateChanged(f);
+                OnObserverAdded(derivation);
             }
+            SubscribeObserver(derivation.DependencyStateMask);
         }
+
         internal void RemoveObserver(IDerivation derivation)
         {
             CheckQueueAccess();
@@ -27,6 +28,7 @@ namespace Atoms.Core
                 CheckBecomeUnobserved();
             }
         }
+
         internal void SubscribeObserver(NodeState flag)
         {
             observersStateMask &= flag;
@@ -34,7 +36,7 @@ namespace Atoms.Core
 
         private void CheckBecomeUnobserved()
         {
-            if (!IsWatched && observers.Count == 0
+            if (!IsActive && observers.Count == 0
                 && (state & NodeState.BecomeUnobservedRequired) == NodeState.BecomeUnobservedRequired
                 && (state & NodeState.BecomeUnobserved) != NodeState.BecomeUnobserved)
             {
@@ -46,25 +48,25 @@ namespace Atoms.Core
         internal void BecomeUnobserved()
         {
             state &= ~NodeState.BecomeUnobserved;
-            if (!IsWatched && observers.Count == 0)
+            if (!IsActive && observers.Count == 0)
             {
                 OnBecomeUnobserved();
             }
         }
 
         protected virtual void OnBecomeUnobserved() { }
-
+        protected virtual void OnObserverAdded(IDerivation derivation) { }
         protected internal virtual bool DirtyCheck() => false;
 
         internal void ReportObservers(NodeState flag)
         {
-            if (IsWatched) Schedule();
+            if (IsActive) Schedule();
             if ((observersStateMask & flag) == flag) return;
 
             observersStateMask |= flag;
 
             foreach (var observer in observers)
-                observer.ReportStateChanged(flag);
+                observer.ReportDependencyStateChanged(flag);
         }
 
         protected void ReportObserved()
@@ -72,21 +74,21 @@ namespace Atoms.Core
             (SynchronizationContext.Current as DerivationScope)?.ReportObserved(this);
         }
 
-        internal bool IsObserved => IsWatched || observers.Count > 0 || SynchronizationContext.Current is DerivationScope;
+        internal bool IsObserved => IsActive || observers.Count > 0 || SynchronizationContext.Current is DerivationScope;
 
-        protected bool IsWatched
+        protected bool IsActive
         {
-            get { return (state & NodeState.Watched) == NodeState.Watched; }
+            get { return (state & NodeState.Active) == NodeState.Active; }
             set
             {
                 if (value)
                 {
-                    state |= NodeState.Watched;
+                    state |= NodeState.Active;
                     if ((state & NodeState.ProbablyDirty) == NodeState.ProbablyDirty) Schedule();
                 }
                 else
                 {
-                    state &= ~NodeState.Watched;
+                    state &= ~NodeState.Active;
                     CheckBecomeUnobserved();
                 }
             }

@@ -1,31 +1,25 @@
 ﻿using System;
-using System.Collections.Generic;
 
 namespace Atoms.Core
 {
     struct DerivationScopeHelper : IDisposable
     {
-        private readonly IDerivation derivation;
-        private readonly HashSet<AtomBase> old_deps, new_deps;
+        private readonly DerivationScope oldScope, scope;
 
-        public DerivationScopeHelper(IDerivation derivation, ref HashSet<AtomBase> dependencies)
+        public DerivationScopeHelper(IDerivation derivation, ref DerivationScope scope)
         {
-            this.old_deps = dependencies;
-            this.new_deps = dependencies = new HashSet<AtomBase>();
-            this.derivation = derivation;
+            this.oldScope = scope;
+            this.scope = scope = new DerivationScope(derivation);
+
+            oldScope?.Stop();
         }
 
         public void Dispose()
         {
-            if (old_deps != null)
-            {
-                old_deps.ExceptWith(new_deps);
-                foreach (var atom in old_deps)
-                    atom.RemoveObserver(derivation);
-            }
+            oldScope?.Finish(scope);
         }
 
-        public void Execute(Action action) => new DerivationScope(derivation, new_deps).Execute(action);
-        public T Execute<T>(Func<T> action) => new DerivationScope(derivation, new_deps).Execute(action);
+        public void Execute(Action action) => scope.Execute(action);
+        public T Execute<T>(Func<T> action) => scope.Execute(action);
     }
 }

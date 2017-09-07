@@ -1,8 +1,8 @@
 ﻿namespace Atoms.Core
 {
-    internal interface IDerivation
+    public interface IDerivation
     {
-        void ReportStateChanged(NodeState state);
-        void ReportObserved(AtomBase atom, object tag);
+        void ReportDependencyStateChanged(NodeState state);
+        NodeState DependencyStateMask { get; }
     }
 }

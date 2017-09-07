@@ -1,12 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 
 namespace Atoms.Core
 {
     public abstract class ComputedBase<T> : AtomBase, IDerivation, IReadOnlyAtom<T>
     {
-        private HashSet<AtomBase> dependencies;
+        private DerivationScope scope;
         private T cachedValue;
         private ExceptionDispatchInfo cachedException;
 
@@ -23,7 +22,7 @@ namespace Atoms.Core
             T oldValue;
             ExceptionDispatchInfo oldException;
 
-            using (var track = new DerivationScopeHelper(this, ref dependencies))
+            using (var track = new DerivationScopeHelper(this, ref scope))
             {
                 state &= ~NodeState.Dirty & ~NodeState.ProbablyDirty;
                 state |= NodeState.Computing;
@@ -53,7 +52,8 @@ namespace Atoms.Core
             return false;
         }
 
-        void IDerivation.ReportStateChanged(NodeState flag)
+        NodeState IDerivation.DependencyStateMask => state & (NodeState.ProbablyDirty | NodeState.Dirty);
+        void IDerivation.ReportDependencyStateChanged(NodeState flag)
         {
             if (flag != NodeState.None && (state & NodeState.ProbablyDirty) != NodeState.ProbablyDirty)
             {
@@ -66,25 +66,17 @@ namespace Atoms.Core
             }
         }
 
-        void IDerivation.ReportObserved(AtomBase atom, object tag)
+        protected override void OnObserverAdded(IDerivation derivation)
         {
-            CheckQueueAccess();
-
-            if (tag == dependencies && dependencies.Add(atom))
+            if ((state & NodeState.ProbablyDirty) == NodeState.ProbablyDirty)
             {
-                atom.AddObserver(this);
-                atom.SubscribeObserver(state);
+                derivation.ReportDependencyStateChanged(NodeState.ProbablyDirty);
             }
         }
 
         protected override void OnBecomeUnobserved()
         {
-            if (dependencies != null)
-            {
-                foreach (var atom in dependencies)
-                    atom.RemoveObserver(this);
-                dependencies = null;
-            }
+            scope?.Finish(null);
             cachedValue = default(T);
             cachedException = null;
             state |= NodeState.Dirty;
@@ -98,7 +90,7 @@ namespace Atoms.Core
                 throw new InvalidOperationException("Circular dependencies are not allowed");
         }
 
-        protected internal override bool DirtyCheck() => DerivationUtils.ShouldExecute(ref state, dependencies) && TrackAndCompute();
+        protected internal override bool DirtyCheck() => (scope == null || scope.ShouldExecute(ref state)) && TrackAndCompute();
 
         private T GetCachedValue()
         {
@@ -114,7 +106,7 @@ namespace Atoms.Core
                 CheckReentrancy();
 
                 if (!IsObserved) return OnCompute();
-                if (DerivationUtils.ShouldExecute(ref state, dependencies)) TrackAndCompute();
+                DirtyCheck();
                 ReportObserved();
                 return GetCachedValue();
             }
@@ -126,15 +118,8 @@ namespace Atoms.Core
             CheckReentrancy();
 
             if (!IsObserved) return OnCompute();
-            if (DerivationUtils.ShouldExecute(ref state, dependencies)) TrackAndCompute();
+            DirtyCheck();
             return GetCachedValue();
         }
-
-        protected override void OnScheduledExecute()
-        {
-            if (DerivationUtils.ShouldExecute(ref state, dependencies)) OnChanged();
-        }
-
-        protected virtual void OnChanged() { }
     }
 }

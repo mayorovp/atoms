@@ -6,7 +6,7 @@ namespace Atoms.Core
 {
     public abstract class ReactionBase : Node, IDerivation, IDisposable
     {
-        private HashSet<AtomBase> dependencies = new HashSet<AtomBase>();
+        private DerivationScope scope;
 
         public ReactionBase()
         {
@@ -19,7 +19,7 @@ namespace Atoms.Core
 
             CheckQueueAccess();
 
-            using (var track = new DerivationScopeHelper(this, ref dependencies))
+            using (var track = new DerivationScopeHelper(this, ref scope))
             {
                 state &= ~NodeState.Dirty & ~NodeState.ProbablyDirty;
                 state |= NodeState.Computing;
@@ -41,7 +41,7 @@ namespace Atoms.Core
 
             CheckQueueAccess();
 
-            using (var track = new DerivationScopeHelper(this, ref dependencies))
+            using (var track = new DerivationScopeHelper(this, ref scope))
             {
                 state &= ~NodeState.Dirty & ~NodeState.ProbablyDirty;
                 state |= NodeState.Computing;
@@ -57,7 +57,8 @@ namespace Atoms.Core
             }
         }
 
-        void IDerivation.ReportStateChanged(NodeState flag)
+        NodeState IDerivation.DependencyStateMask => state & (NodeState.ProbablyDirty | NodeState.Dirty);
+        void IDerivation.ReportDependencyStateChanged(NodeState flag)
         {
             if ((state & NodeState.Disposed) == NodeState.Disposed) return;
 
@@ -72,23 +73,11 @@ namespace Atoms.Core
             }
         }
 
-        void IDerivation.ReportObserved(AtomBase atom, object tag)
-        {
-            if ((state & NodeState.Disposed) == NodeState.Disposed) return;
-            CheckQueueAccess();
-
-            if (tag == dependencies && dependencies.Add(atom))
-            {
-                atom.AddObserver(this);
-                atom.SubscribeObserver(state);
-            }
-        }
-
         protected override sealed void OnScheduledExecute()
         {
             if ((state & NodeState.Disposed) == NodeState.Disposed) return;
 
-            if (DerivationUtils.ShouldExecute(ref state, dependencies))
+            if (scope == null || scope.ShouldExecute(ref state))
             {
                 try { Invalidate(); }
                 catch (Exception ex) when (Error != null) { Error?.Invoke(ex); }
@@ -103,11 +92,7 @@ namespace Atoms.Core
         {
             CheckQueueAccess();
             state |= NodeState.Disposed;
-            foreach (var atom in dependencies)
-            {
-                atom.RemoveObserver(this);
-            }
-            dependencies.Clear();
+            scope?.Finish(null);
         }
 
         public event Action<Exception> Error;
